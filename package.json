@@ -1,0 +1,10 @@
+{
+  "name": "wp10-aiagent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Single-file AI chat agent on Cloudflare Workers, also deployable behind nginx with a zero-dependency Node backend",
+  "scripts": {
+    "build": "node build.js",
+    "start": "node build.js && node server.js"
+  }
+}

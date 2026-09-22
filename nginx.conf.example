@@ -1,0 +1,39 @@
+# wp10-aiagent nginx 配置样例
+# 前提：node server.js 已在本机 127.0.0.1:8787 运行（可用 systemd/pm2 守护）
+# 注意：页面使用根路径下的 /api-search 与 /api-proxy，请部署在域名根路径
+
+server {
+    listen 80;
+    server_name your.domain.com;
+
+    # 静态文件目录（构建产物）
+    root /opt/wp10-aiagent/public;
+    index index.html;
+
+    # 图片消息为 base64 内联上传，放宽请求体限制
+    client_max_body_size 20m;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location = /api-search {
+        proxy_pass http://127.0.0.1:8787;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_read_timeout 120s;
+    }
+
+    location /api-proxy/ {
+        proxy_pass http://127.0.0.1:8787;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        # LLM 长回复可能耗时较久
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+        proxy_buffering off;
+    }
+}

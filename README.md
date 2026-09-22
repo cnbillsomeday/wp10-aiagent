@@ -18,7 +18,9 @@
 单文件 `worker.js`（内嵌全部 HTML/CSS/JS，页面脚本保持 ES5 兼容旧 Edge），
 `wrangler.jsonc` 为部署配置（无任何绑定）。
 
-## 部署
+## 部署方式
+
+### 方式一：Cloudflare Workers（原版）
 
 ```bash
 npx wrangler deploy
@@ -26,3 +28,25 @@ npx wrangler deploy
 
 首次使用需 `npx wrangler login`。部署后访问 `https://<worker-name>.<subdomain>.workers.dev/`，
 在页面「设置」中填写 API Base URL / Key / 模型即可开始使用；所有配置仅保存在浏览器本地。
+
+### 方式二：nginx + Node 后端（自托管）
+
+前提：Node ≥ 18（需内置 fetch）。后端逻辑在运行时从 `worker.js` 提取，无需依赖安装。
+
+```bash
+npm run build        # 从 worker.js 生成 public/index.html
+node server.js       # 默认监听 127.0.0.1:8787（可用 PORT/HOST 环境变量覆盖）
+```
+
+`server.js` 可独立使用（自带静态托管）；生产建议 nginx 托管静态文件并将
+`/api-search`、`/api-proxy` 反代到 Node 进程，参考 `nginx.conf.example`：
+
+```nginx
+root /opt/wp10-aiagent/public;
+location / { try_files $uri $uri/ /index.html; }
+location = /api-search { proxy_pass http://127.0.0.1:8787; }
+location /api-proxy/   { proxy_pass http://127.0.0.1:8787; proxy_read_timeout 300s; }
+```
+
+注意：页面使用根路径下的 `/api-search` 与 `/api-proxy`，请部署在域名根路径；
+客户端配置的 API Key 通过 `/api-proxy` 请求头转发给用户自己填写的上游 API，服务器不持久化任何数据。
