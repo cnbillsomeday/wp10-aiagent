@@ -1,0 +1,6 @@
+{
+  // 按线上 Worker「ai-chat」的实际配置还原（无绑定、无兼容性标志）
+  "name": "ai-chat",
+  "main": "worker.js",
+  "compatibility_date": "2024-06-01"
+}
