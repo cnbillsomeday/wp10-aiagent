@@ -101,6 +101,25 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
 .fcbtn.dl { background:#2f6bd8; color:#fff; border-color:#2f6bd8; }
 .fctoggle { font-size:12px; color:#5b7ec9; background:none; border:0; padding:2px 9px 7px; cursor:pointer; }
 .fcbody { margin:0; padding:8px 9px; border-top:1px solid #e6ebf2; max-height:260px; overflow:auto; white-space:pre-wrap; word-break:break-all; font-size:12px; font-family:Consolas,Menlo,monospace; background:#fff; color:#1c2430; }
+#memd { position:absolute; top:0; bottom:0; right:0; width:82%; max-width:340px; background:#fff; z-index:20; transform:translateX(105%); transition:transform .18s ease; box-shadow:-2px 0 10px rgba(0,0,0,.18); display:flex; flex-direction:column; }
+#memd.show { transform:translateX(0); }
+#memdHead { padding:13px 12px; font-weight:bold; font-size:15px; border-bottom:1px solid #e6ebf2; display:flex; align-items:center; }
+.memTop { padding:9px 12px; margin:0; border-bottom:1px solid #f0f2f6; font-size:13px; color:#42506a; display:flex; align-items:center; }
+.memTop input { margin:0 5px 0 0; }
+#memdList { flex:1 1 auto; overflow-y:auto; }
+.memText { font-size:14px; color:#1c2430; word-break:break-all; line-height:1.4; }
+#memdEdit { flex:0 0 auto; padding:4px 12px 12px; border-bottom:1px solid #e6ebf2; }
+#memdEdit label { display:block; font-size:13px; color:#5b6572; margin:9px 0 3px; }
+#memdEdit textarea { width:100%; box-sizing:border-box; padding:9px; border:1px solid #c9d2e0; border-radius:7px; font:inherit; font-size:14px; height:80px; resize:vertical; }
+#memdFormBtns, #memdFormBtns2 { display:flex; margin-top:11px; }
+#memdFormBtns button, #memdFormBtns2 button { flex:1; padding:9px; border-radius:8px; font-size:14px; }
+#memSave, #memAddSel { border:0; background:#2f6bd8; color:#fff; margin-right:8px; }
+#memCancel, #memCandCancel { border:1px solid #c9d2e0; background:#fff; color:#333; }
+#memdCand { flex:0 0 auto; max-height:45%; overflow-y:auto; padding:4px 12px 12px; border-bottom:1px solid #e6ebf2; }
+.memCandHead { font-size:13px; color:#5b6572; margin:8px 0 6px; }
+.memcand { display:flex; align-items:flex-start; font-size:13px; margin-bottom:6px; line-height:1.4; }
+.memcand input { margin:2px 5px 0 0; flex:0 0 auto; }
+#memdFoot { flex:0 0 auto; display:flex; padding:10px 12px; border-top:1px solid #e6ebf2; }
 </style>
 </head>
 <body>
@@ -111,6 +130,7 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
   <button id="btnNew" class="tb">＋</button>
   <button id="btnWeb" class="tb">联网</button>
   <button id="btnSkills" class="tb">技能</button>
+  <button id="btnMemory" class="tb">记忆</button>
   <button id="btnCfg" class="tb">设置</button>
 </div>
 <div id="main">
@@ -135,6 +155,26 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
       <button id="skImport" class="skbtn">导入.md</button>
       <button id="skExport" class="skbtn">导出</button>
       <input id="skFile" type="file" accept=".md,.markdown,.txt,text/plain" style="display:none">
+    </div>
+  </div>
+  <div id="memd">
+    <div id="memdHead">全局记忆<button id="memdClose" class="skdx">×</button></div>
+    <label class="chk memTop"><input id="memOn" type="checkbox"> 启用全局记忆（所有会话生效）</label>
+    <div id="memdEdit" style="display:none">
+      <label>记忆内容（一句话，如：用户是前端工程师）</label>
+      <textarea id="memText" placeholder="要长期记住的事实…"></textarea>
+      <div id="memdFormBtns"><button id="memSave">保存</button><button id="memCancel">取消</button></div>
+    </div>
+    <div id="memdCand" style="display:none">
+      <div class="memCandHead">提取到的候选记忆（勾选后添加）：</div>
+      <div id="memCandList"></div>
+      <div id="memdFormBtns2"><button id="memAddSel">添加选中</button><button id="memCandCancel">取消</button></div>
+    </div>
+    <div id="memdList"></div>
+    <div id="memdFoot">
+      <button id="memNew" class="skbtn">新建</button>
+      <button id="memExtract" class="skbtn">从会话提取</button>
+      <button id="memExport" class="skbtn">导出</button>
     </div>
   </div>
   <div id="mask"></div>
@@ -195,7 +235,7 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
 (function () {
   var LS_S = 'aichat_sessions_v1', LS_C = 'aichat_cfg_v1';
   var sessions = [], cur = null, busy = false, pendImg = null, quotaWarned = false;
-  var cfg = { baseUrl: 'https://api.openai.com/v1', apiKey: '', model: 'gpt-4o-mini', proxy: true, systemPrompt: '', searchEnabled: false, searchProvider: 'auto', searchKey: '', searchCount: 4, searchFetch: true, skillAuto: true };
+  var cfg = { baseUrl: 'https://api.openai.com/v1', apiKey: '', model: 'gpt-4o-mini', proxy: true, systemPrompt: '', searchEnabled: false, searchProvider: 'auto', searchKey: '', searchCount: 4, searchFetch: true, skillAuto: true, memoryEnabled: true };
 
   // 默认角色（通过 system 提示词实现，可在每个会话独立选择）
   var CHARS = [
@@ -658,8 +698,197 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
     document.body.appendChild(a); a.click();
     setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(a.href); }, 100);
   }
-  function showSkills() { hideHistory(); $('skd').className = 'show'; $('mask').style.display = 'block'; renderSkills(); }
+  function showSkills() { hideHistory(); hideMemory(); $('skd').className = 'show'; $('mask').style.display = 'block'; renderSkills(); }
   function hideSkills() { $('skd').className = ''; $('mask').style.display = 'none'; }
+
+  // ---- 全局记忆 ----
+  var LS_M = 'aichat_memory_v1';
+  var memory = [];
+  var memEditing = null;
+  var extracting = false;
+  function loadMemory() { var saved = lsGet(LS_M, null); memory = saved && saved.length ? saved : []; }
+  function saveMemory() { if (!lsSet(LS_M, memory) && !quotaWarned) { quotaWarned = true; alert('本地存储空间不足，记忆可能未保存。'); } }
+  function enabledMemory() {
+    var out = [];
+    if (cfg.memoryEnabled === false) return out;
+    for (var i = 0; i < memory.length; i++) if (memory[i].enabled) out.push(memory[i]);
+    return out;
+  }
+  function buildMemorySystem(list) {
+    var lines = ['关于用户的长期记忆（在所有对话中有效；回答时参考这些事实，但不要主动逐条复述）：'];
+    var total = 0;
+    for (var i = 0; i < list.length; i++) {
+      var t = String(list[i].text || '').slice(0, 300);
+      if (total + t.length > 2000) break;
+      total += t.length;
+      lines.push('- ' + t);
+    }
+    return lines.join('\n');
+  }
+  function renderMemory() {
+    var box = $('memdList'); box.innerHTML = '';
+    if (!memory.length) { var p = document.createElement('div'); p.className = 'hempty'; p.textContent = '暂无记忆，点击下方新建或从会话提取'; box.appendChild(p); }
+    for (var i = 0; i < memory.length; i++) {
+      (function (m) {
+        var d = document.createElement('div'); d.className = 'skit';
+        var t = document.createElement('div'); t.className = 'memText'; t.textContent = m.text;
+        var ops = document.createElement('div'); ops.className = 'skops';
+        var en = document.createElement('label'); en.className = 'skchk';
+        var cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!m.enabled;
+        en.appendChild(cb); en.appendChild(document.createTextNode('启用'));
+        var eb = document.createElement('button'); eb.className = 'skb'; eb.textContent = '编辑';
+        var db = document.createElement('button'); db.className = 'skb danger'; db.textContent = '删除';
+        ops.appendChild(en); ops.appendChild(eb); ops.appendChild(db);
+        d.appendChild(t); d.appendChild(ops);
+        cb.onchange = function () { m.enabled = cb.checked; saveMemory(); };
+        eb.onclick = function () { openMemForm(m.id); };
+        db.onclick = function () {
+          if (!confirm('删除这条记忆？' + m.text.slice(0, 30))) return;
+          var arr = [];
+          for (var x = 0; x < memory.length; x++) if (memory[x].id !== m.id) arr.push(memory[x]);
+          memory = arr; saveMemory(); renderMemory();
+        };
+        box.appendChild(d);
+      })(memory[i]);
+    }
+  }
+  function openMemForm(id) {
+    memEditing = id || null;
+    var m = null;
+    for (var i = 0; i < memory.length; i++) if (memory[i].id === id) m = memory[i];
+    $('memText').value = m ? m.text : '';
+    hideCand();
+    $('memdEdit').style.display = 'block';
+    try { $('memText').focus(); } catch (e) { }
+  }
+  function closeMemForm() { $('memdEdit').style.display = 'none'; memEditing = null; }
+  function saveMemForm() {
+    var text = $('memText').value.trim().slice(0, 300);
+    if (!text) { alert('请输入记忆内容'); return; }
+    if (memEditing) {
+      for (var i = 0; i < memory.length; i++) if (memory[i].id === memEditing) memory[i].text = text;
+    } else {
+      if (memory.length >= 50) { alert('记忆条数已达上限（50 条），请先删除部分'); return; }
+      memory.unshift({ id: uid(), text: text, enabled: true, ts: (new Date()).getTime() });
+    }
+    saveMemory(); closeMemForm(); renderMemory();
+  }
+  function hideCand() { $('memdCand').style.display = 'none'; $('memCandList').innerHTML = ''; }
+  function showCandidates(cands) {
+    var box = $('memCandList'); box.innerHTML = '';
+    for (var i = 0; i < cands.length; i++) {
+      (function (text) {
+        var row = document.createElement('label'); row.className = 'memcand';
+        var cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = true;
+        var sp = document.createElement('span'); sp.textContent = text;
+        row.appendChild(cb); row.appendChild(sp);
+        box.appendChild(row);
+      })(cands[i]);
+    }
+    $('memdEdit').style.display = 'none';
+    $('memdCand').style.display = 'block';
+  }
+  function addSelectedCandidates() {
+    var rows = $('memCandList').querySelectorAll('.memcand');
+    for (var i = 0; i < rows.length && memory.length < 50; i++) {
+      var cb = rows[i].querySelector('input');
+      if (cb && cb.checked) {
+        memory.unshift({ id: uid(), text: rows[i].querySelector('span').textContent.slice(0, 300), enabled: true, ts: (new Date()).getTime() });
+      }
+    }
+    saveMemory(); hideCand(); renderMemory();
+  }
+  function parseCandidates(content) {
+    var t = String(content || '');
+    var a = t.indexOf('[');
+    var b = t.lastIndexOf(']');
+    var arr = null;
+    if (a !== -1 && b > a) {
+      try { arr = JSON.parse(t.slice(a, b + 1)); } catch (e) { arr = null; }
+    }
+    if (!arr) {
+      arr = [];
+      var lines = t.split('\n');
+      for (var i = 0; i < lines.length; i++) {
+        var ln = lines[i].replace(/^[-*\d.\s]+/, '').replace(/^["']|["'],?$/g, '').trim();
+        if (ln && ln.length >= 4 && ln.charAt(0) !== '[') arr.push(ln);
+      }
+    }
+    var out = [], seen = [];
+    for (var j = 0; j < arr.length && out.length < 8; j++) {
+      var s = String(arr[j] || '').trim().slice(0, 300);
+      if (!s) continue;
+      var dup = false, low = s.toLowerCase();
+      for (var k = 0; k < memory.length; k++) if (memory[k].text.toLowerCase() === low) { dup = true; break; }
+      for (var z = 0; z < seen.length; z++) if (seen[z] === low) { dup = true; break; }
+      if (dup) continue;
+      seen.push(low); out.push(s);
+    }
+    return out;
+  }
+  function extractMemory() {
+    if (extracting) return;
+    if (!cur || !cur.messages.length) { alert('当前会话还没有消息'); return; }
+    if (!cfg.baseUrl || !cfg.model) { openSettings(); return; }
+    var dump = [];
+    var start = Math.max(0, cur.messages.length - 30);
+    var total = 0;
+    for (var i = start; i < cur.messages.length; i++) {
+      var mm = cur.messages[i];
+      if (!mm.content) continue;
+      var line = (mm.role === 'user' ? '用户：' : '助手：') + String(mm.content).slice(0, 500);
+      if (total + line.length > 8000) break;
+      total += line.length;
+      dump.push(line);
+    }
+    if (!dump.length) { alert('当前会话没有可提取的文本'); return; }
+    var existing = [];
+    for (var k = 0; k < memory.length; k++) existing.push(memory[k].text);
+    var instruction = '你是记忆提取器。从对话中提取关于用户的、长期有效的事实（身份、职业、偏好、习惯、重要项目或背景）。要求：每条一句话；最多 8 条；只提取长期信息，忽略一次性的提问内容；不要与已有记忆重复。只输出 JSON 字符串数组，不要输出其他内容。';
+    var userMsg = '已有记忆：' + (existing.length ? existing.join('；') : '（无）') + '\n\n对话内容：\n' + dump.join('\n');
+    var payload = [{ role: 'system', content: instruction }, { role: 'user', content: userMsg }];
+    var url = cfg.proxy ? '/api-proxy/chat/completions' : (rtrimSlash(cfg.baseUrl) + '/chat/completions');
+    var x = new XMLHttpRequest();
+    x.open('POST', url, true);
+    x.timeout = 120000;
+    x.setRequestHeader('Content-Type', 'application/json');
+    if (cfg.apiKey) x.setRequestHeader('Authorization', 'Bearer ' + cfg.apiKey);
+    if (cfg.proxy) x.setRequestHeader('X-Api-Base', cfg.baseUrl);
+    extracting = true;
+    var btn = $('memExtract'); var old = btn.textContent; btn.textContent = '提取中…'; btn.disabled = true;
+    function restore() { extracting = false; btn.textContent = old; btn.disabled = false; }
+    x.onload = function () {
+      restore();
+      var data = null;
+      try { data = JSON.parse(x.responseText); } catch (e) { }
+      if (x.status !== 200) {
+        var em = '提取失败：HTTP ' + x.status;
+        if (data && data.error && data.error.message) em += '：' + data.error.message;
+        alert(em);
+        return;
+      }
+      var content = data && data.choices && data.choices[0] && data.choices[0].message ? (data.choices[0].message.content || '') : '';
+      var cands = parseCandidates(content);
+      if (!cands.length) { alert('未提取到新的记忆'); return; }
+      showCandidates(cands);
+    };
+    x.onerror = function () { restore(); alert('提取请求发送失败' + (cfg.proxy ? '' : '（可能跨域受限，可在设置中开启 Worker 代理）')); };
+    x.ontimeout = function () { restore(); alert('提取请求超时'); };
+    x.send(JSON.stringify({ model: cfg.model, messages: payload }));
+  }
+  function exportMemory() {
+    if (!memory.length) { alert('暂无记忆可导出'); return; }
+    var lines = ['# 全局记忆'];
+    for (var i = 0; i < memory.length; i++) lines.push('- ' + memory[i].text);
+    var blob = new Blob([lines.join('\n')], { type: 'text/markdown' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'memory.md';
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(a.href); }, 100);
+  }
+  function showMemory() { hideHistory(); hideSkills(); $('memd').className = 'show'; $('mask').style.display = 'block'; $('memOn').checked = cfg.memoryEnabled !== false; renderMemory(); }
+  function hideMemory() { $('memd').className = ''; $('mask').style.display = 'none'; }
 
   function openSettings() {
     $('cfgBase').value = cfg.baseUrl; $('cfgKey').value = cfg.apiKey;
@@ -761,6 +990,8 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
       var ch = charById(cur.charId || 'none');
       var sys = ch.id === 'custom' ? (cfg.systemPrompt || '').trim() : ch.prompt;
       if (sys) payload.push({ role: 'system', content: sys });
+      var memList = enabledMemory();
+      if (memList.length) payload.push({ role: 'system', content: buildMemorySystem(memList) });
       if (skillList && skillList.length) payload.push({ role: 'system', content: buildSkillsSystem(skillList) });
       if (searchResults && searchResults.length) payload.push({ role: 'system', content: buildSearchSystem(searchResults) });
       for (var i = 0; i < cur.messages.length; i++) {
@@ -829,9 +1060,23 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
   }
 
   // ---- 事件绑定 ----
-  $('btnHist').onclick = function () { hideSkills(); showHistory(); };
-  $('mask').onclick = function () { if ($('skd').className === 'show') hideSkills(); else hideHistory(); };
-  $('btnNew').onclick = function () { hideHistory(); hideSkills(); newSession(); };
+  $('btnHist').onclick = function () { hideSkills(); hideMemory(); showHistory(); };
+  $('mask').onclick = function () {
+    if ($('skd').className === 'show') hideSkills();
+    else if ($('memd').className === 'show') hideMemory();
+    else hideHistory();
+  };
+  $('btnNew').onclick = function () { hideHistory(); hideSkills(); hideMemory(); newSession(); };
+  $('btnMemory').onclick = showMemory;
+  $('memdClose').onclick = hideMemory;
+  $('memNew').onclick = function () { openMemForm(null); };
+  $('memSave').onclick = saveMemForm;
+  $('memCancel').onclick = closeMemForm;
+  $('memExtract').onclick = extractMemory;
+  $('memExport').onclick = exportMemory;
+  $('memAddSel').onclick = addSelectedCandidates;
+  $('memCandCancel').onclick = function () { hideCand(); renderMemory(); };
+  $('memOn').onchange = function () { cfg.memoryEnabled = $('memOn').checked; saveCfg(); };
   $('btnSkills').onclick = showSkills;
   $('skdClose').onclick = hideSkills;
   $('skNew').onclick = function () { openSkillForm(null); };
@@ -865,6 +1110,7 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
   var c = lsGet(LS_C, null);
   if (c) { for (var k in c) { if (c.hasOwnProperty(k)) cfg[k] = c[k]; } }
   loadSkills();
+  loadMemory();
   if (sessions.length) cur = sessions[0]; else newSession();
   renderAll();
   if (!cfg.apiKey) openSettings();
