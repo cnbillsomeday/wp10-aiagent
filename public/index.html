@@ -231,9 +231,6 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
     <input id="cfgKey" type="password" placeholder="sk-...">
     <label>模型名称</label>
     <input id="cfgModel" type="text" placeholder="gpt-4o-mini">
-    <label>生图模型（可选，需服务商支持 /images/generations）</label>
-    <input id="cfgImageModel" type="text" placeholder="如 dall-e-3、cogview-3、flux；留空=关闭画图检测">
-    <div class="hint">填写生图模型后，发送「画一个…」「生成图片…」等请求会直接调用生图接口，结果以图片形式显示并可下载。</div>
     <label>自定义 System Prompt（角色设定，可为空）</label>
     <textarea id="cfgSys" placeholder="在此填写你自己的角色设定提示词，每次对话会作为 system 消息发送。"></textarea>
     <div class="hint">选择下方「自定义」角色按钮后生效；提示词仅保存在本机浏览器，随你的请求发往你配置的 API。发送图片需模型支持视觉（如 gpt-4o），图片会在本机压缩后随消息上传。</div>
@@ -271,7 +268,7 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
 (function () {
   var LS_S = 'aichat_sessions_v1', LS_C = 'aichat_cfg_v1';
   var sessions = [], cur = null, busy = false, pendImg = null, quotaWarned = false, bootRenderPending = false;
-  var cfg = { baseUrl: 'https://api.openai.com/v1', apiKey: '', model: 'gpt-4o-mini', proxy: true, systemPrompt: '', searchEnabled: false, searchProvider: 'auto', searchKey: '', searchCount: 4, searchFetch: true, skillAuto: true, memoryEnabled: true, extractModel: '', imageModel: '' };
+  var cfg = { baseUrl: 'https://api.openai.com/v1', apiKey: '', model: 'gpt-4o-mini', proxy: true, systemPrompt: '', searchEnabled: false, searchProvider: 'auto', searchKey: '', searchCount: 4, searchFetch: true, skillAuto: true, memoryEnabled: true, extractModel: '' };
 
   // 默认角色（通过 system 提示词实现，可在每个会话独立选择）
   var CHARS = [
@@ -1126,7 +1123,6 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
   function openSettings() {
     $('cfgBase').value = cfg.baseUrl; $('cfgKey').value = cfg.apiKey;
     $('cfgModel').value = cfg.model; $('cfgProxy').checked = !!cfg.proxy;
-    $('cfgImageModel').value = cfg.imageModel || '';
     $('cfgSys').value = cfg.systemPrompt || '';
     $('cfgSearch').checked = !!cfg.searchEnabled;
     $('cfgSearchProvider').value = cfg.searchProvider || 'auto';
@@ -1141,7 +1137,6 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
     cfg.baseUrl = rtrimSlash($('cfgBase').value);
     cfg.apiKey = $('cfgKey').value.trim();
     cfg.model = $('cfgModel').value.trim() || 'gpt-4o-mini';
-    cfg.imageModel = $('cfgImageModel').value.trim();
     cfg.proxy = $('cfgProxy').checked;
     cfg.systemPrompt = $('cfgSys').value;
     cfg.searchEnabled = $('cfgSearch').checked;
@@ -1153,54 +1148,6 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
     saveCfg(); closeSettings(); renderChips();
   }
 
-  function isDrawRequest(text) {
-    var t = String(text || '').trim();
-    if (!t || t.length > 120) return false;
-    var low = t.toLowerCase();
-    var markers = ['帮我画', '给我画', '帮我生成', '给我生成', '画一个', '画一张', '画个', '画张', '画幅', '画只', '画条', '绘制', '生成一张', '生成图片', '生成一幅', '来一张', '来张图', '画一下', 'draw me', 'generate an image', 'draw a ', 'draw an '];
-    for (var i = 0; i < markers.length; i++) if (low.indexOf(markers[i]) !== -1) return true;
-    if (t.charAt(0) === '画') return true;
-    return false;
-  }
-  function requestImage(url, body, cb) {
-    var x = new XMLHttpRequest();
-    x.open('POST', url, true);
-    x.timeout = 180000;
-    x.setRequestHeader('Content-Type', 'application/json');
-    if (cfg.apiKey) x.setRequestHeader('Authorization', 'Bearer ' + cfg.apiKey);
-    if (cfg.proxy) x.setRequestHeader('X-Api-Base', cfg.baseUrl);
-    x.onload = function () {
-      var data = null;
-      try { data = JSON.parse(x.responseText); } catch (e) { }
-      if (x.status !== 200) {
-        if (x.status === 400 && String(x.responseText || '').indexOf('response_format') !== -1) { cb({ retryPlain: true }); return; }
-        var msg = 'HTTP ' + x.status;
-        if (data && data.error && data.error.message) msg += '：' + data.error.message;
-        cb(new Error(msg));
-        return;
-      }
-      var item = data && data.data && data.data[0];
-      if (!item) { cb(new Error('返回数据无法解析')); return; }
-      if (item.b64_json) { cb(null, 'data:image/png;base64,' + item.b64_json); return; }
-      if (item.url) { cb(null, item.url); return; }
-      cb(new Error('接口未返回图片数据'));
-    };
-    x.onerror = function () { cb(new Error('请求发送失败' + (cfg.proxy ? '' : '（可尝试开启 Worker 代理）'))); };
-    x.ontimeout = function () { cb(new Error('请求超时')); };
-    x.send(JSON.stringify(body));
-  }
-  function drawImage(promptText, cb) {
-    var url = cfg.proxy ? '/api-proxy/images/generations' : (rtrimSlash(cfg.baseUrl) + '/images/generations');
-    var body = { model: (cfg.imageModel || '').trim(), prompt: String(promptText).slice(0, 400), n: 1, response_format: 'b64_json' };
-    requestImage(url, body, function (err, resultUrl) {
-      if (err && err.retryPlain) {
-        delete body.response_format;
-        requestImage(url, body, cb);
-        return;
-      }
-      cb(err, resultUrl);
-    });
-  }
   function send() {
     if (busy) return;
     var ta = $('ta'); var text = ta.value.trim();
@@ -1332,29 +1279,6 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
       saveSessions(); renderHistory();
     }
 
-    var drawModel = (cfg.imageModel || '').trim();
-    if (drawModel && !att && isDrawRequest(text)) {
-      pend.firstChild.textContent = '绘图中…';
-      dbg('[draw] start', drawModel, text);
-      drawImage(text, function (err, imgUrl) {
-        if (err) { dbg('[draw] error', err && err.message); fail('绘图失败：' + err.message, ' —— 请检查设置中的「生图模型」以及服务商是否支持图片生成接口。'); return; }
-        function finishShow(finalUrl) {
-          var md = '![生成图片](' + finalUrl + ')';
-          var msg = { role: 'assistant', content: md };
-          cur.messages.push(msg);
-          saveSessions();
-          box.appendChild(bubble('bot', md)); box.scrollTop = box.scrollHeight;
-          renderHistory();
-          done();
-        }
-        if (imgUrl.indexOf('data:image/') === 0 && imgUrl.length < 8 * 1024 * 1024) {
-          downscale(imgUrl, finishShow, function () { finishShow(imgUrl); });
-        } else {
-          finishShow(imgUrl);
-        }
-      });
-      return;
-    }
     if (cur.web && text) {
       pend.firstChild.textContent = '搜索中…';
       doSearch(text, function (err, results) {
