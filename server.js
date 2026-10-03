@@ -137,10 +137,40 @@ function serveStatic(req, res, url) {
   });
 }
 
+async function handleApiImage(req, res, url) {
+  if (req.method !== 'GET') return sendJson(res, 405, { error: { message: 'Method Not Allowed' } });
+  const target = url.searchParams.get('u') || '';
+  if (target.indexOf('http://') !== 0 && target.indexOf('https://') !== 0) {
+    return sendJson(res, 400, { error: { message: '缺少或无效的 u 参数' } });
+  }
+  let up;
+  try {
+    up = await fetch(target, { headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'image/*,*/*' }, redirect: 'follow', signal: AbortSignal.timeout(15000) });
+  } catch (err) {
+    return sendJson(res, 502, { error: { message: '图片抓取失败：' + err.message } });
+  }
+  if (!up.ok) return sendJson(res, 502, { error: { message: '图片源返回 HTTP ' + up.status } });
+  const ct = String(up.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
+  if (ct.indexOf('image/') !== 0) return sendJson(res, 502, { error: { message: '目标不是图片' } });
+  const len = parseInt(up.headers.get('content-length') || '0', 10) || 0;
+  if (len > 10 * 1024 * 1024) return sendJson(res, 502, { error: { message: '图片超过 10MB 上限' } });
+  const buf = Buffer.from(await up.arrayBuffer());
+  if (buf.length > 10 * 1024 * 1024) return sendJson(res, 502, { error: { message: '图片超过 10MB 上限' } });
+  const headers = { 'Content-Type': ct, 'Content-Length': String(buf.length), 'Cache-Control': 'public, max-age=86400', 'Access-Control-Allow-Origin': '*' };
+  if (url.searchParams.get('dl')) {
+    let name = 'image';
+    try { name = decodeURIComponent((target.split('?')[0].split('/').pop() || 'image')).replace(/[^A-Za-z0-9._-]/g, '_') || 'image'; } catch (e) {}
+    headers['Content-Disposition'] = 'attachment; filename="' + name + '"';
+  }
+  res.writeHead(200, headers);
+  res.end(buf);
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://' + (req.headers.host || 'localhost'));
   try {
     if (url.pathname === '/api-search') return await handleApiSearch(req, res);
+    if (url.pathname === '/api-image') return await handleApiImage(req, res, url);
     if (url.pathname.indexOf('/api-proxy/') === 0) return await handleApiProxy(req, res, url);
     return serveStatic(req, res, url);
   } catch (err) {

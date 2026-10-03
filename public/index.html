@@ -134,6 +134,12 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
 #memOpts { flex:0 0 auto; display:flex; align-items:center; padding:7px 12px; border-top:1px solid #f0f2f6; }
 #memModel { flex:1 1 auto; min-width:0; padding:7px 8px; border:1px solid #c9d2e0; border-radius:7px; font-size:13px; box-sizing:border-box; }
 #memTest { flex:0 0 auto; margin-left:6px; border:1px solid #c9d2e0; background:#f4f7fb; color:#42506a; border-radius:7px; padding:7px 10px; font-size:13px; }
+.imgblock { margin:6px 0; max-width:260px; }
+.aimg { display:block; max-width:260px; max-height:220px; border-radius:10px; border:1px solid #dde3ec; background:#fff; }
+.imgbar { display:flex; align-items:center; margin-top:4px; }
+.imgcap { flex:1 1 auto; font-size:12px; color:#8a94a6; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.imgdl { flex:0 0 auto; border:1px solid #c9d2e0; background:#fff; color:#42506a; border-radius:6px; padding:4px 10px; font-size:12px; margin-left:6px; }
+.imgfail { font-size:12px; color:#b02a25; margin-bottom:4px; }
 </style>
 </head>
 <body>
@@ -453,6 +459,115 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
     var b = document.createElement('div'); b.className = 'bub'; b.textContent = txt;
     d.appendChild(b);
   }
+  function isRichBotText(text) {
+    var t = String(text || '');
+    if (t.indexOf('\x60\x60\x60') !== -1) return true;
+    if (t.indexOf('![') !== -1) return true;
+    if (t.indexOf('data:image/') !== -1) return true;
+    return /https?:\/\/[^\s<>"')]+\.(?:png|jpe?g|gif|webp|bmp|svg)/i.test(t);
+  }
+  function imageDisplaySrc(url) {
+    if (url.indexOf('data:image/') === 0) return url;
+    return '/api-image?u=' + encodeURIComponent(url);
+  }
+  function imageFileNameOf(url, seq) {
+    var name = '';
+    try {
+      var noq = url.split('?')[0].split('#')[0];
+      var parts = noq.split('/');
+      name = parts[parts.length - 1] || '';
+      name = decodeURIComponent(name);
+    } catch (e) { }
+    name = String(name).replace(/[^A-Za-z0-9._一-鿿-]/g, '_').slice(0, 60);
+    if (!name || name.indexOf('.') === -1) name = 'image-' + seq + '.png';
+    return name;
+  }
+  function downloadImage(url, name, btn) {
+    function done(txt) {
+      if (btn) { var old = btn.textContent; btn.textContent = txt || '已开始'; setTimeout(function () { btn.textContent = old; }, 1400); }
+    }
+    if (url.indexOf('data:image/') === 0) {
+      try {
+        var comma = url.indexOf(',');
+        var meta = url.slice(5, comma);
+        var payload = url.slice(comma + 1);
+        var mime = meta.split(';')[0] || 'image/png';
+        var blob;
+        if (meta.indexOf('base64') !== -1) {
+          var bin = atob(payload);
+          var arr = new Uint8Array(bin.length);
+          for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+          blob = new Blob([arr], { type: mime });
+        } else {
+          blob = new Blob([decodeURIComponent(payload)], { type: mime });
+        }
+        var a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = name;
+        document.body.appendChild(a); a.click();
+        setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(a.href); }, 100);
+        done();
+      } catch (e) { done('下载失败'); }
+      return;
+    }
+    var a2 = document.createElement('a');
+    a2.href = '/api-image?u=' + encodeURIComponent(url) + '&dl=1';
+    a2.download = name;
+    a2.target = '_blank';
+    a2.rel = 'noopener';
+    document.body.appendChild(a2); a2.click();
+    setTimeout(function () { document.body.removeChild(a2); }, 100);
+    done();
+  }
+  function addImageBlock(d, url, alt, seq) {
+    var block = document.createElement('div'); block.className = 'imgblock';
+    var isData = url.indexOf('data:image/') === 0;
+    var img = document.createElement('img');
+    img.className = 'aimg';
+    img.src = imageDisplaySrc(url);
+    img.alt = alt || '图片';
+    img.setAttribute('loading', 'lazy');
+    img.setAttribute('decoding', 'async');
+    if (!isData) {
+      var link = document.createElement('a');
+      link.href = imageDisplaySrc(url);
+      link.target = '_blank';
+      link.rel = 'noopener';
+      link.appendChild(img);
+      block.appendChild(link);
+    } else {
+      block.appendChild(img);
+    }
+    var bar = document.createElement('div'); bar.className = 'imgbar';
+    var cap = document.createElement('span'); cap.className = 'imgcap';
+    cap.textContent = alt || imageFileNameOf(url, seq);
+    var dl = document.createElement('button'); dl.className = 'imgdl'; dl.textContent = '下载';
+    bar.appendChild(cap); bar.appendChild(dl);
+    block.appendChild(bar);
+    img.onerror = function () {
+      if (!block.querySelector('.imgfail')) {
+        var fail = document.createElement('div'); fail.className = 'imgfail';
+        fail.textContent = '图片加载失败（源站不可达或非有效图片）';
+        block.insertBefore(fail, block.firstChild);
+        img.style.display = 'none';
+      }
+    };
+    dl.onclick = function () { downloadImage(url, imageFileNameOf(url, seq), dl); };
+    d.appendChild(block);
+  }
+  function renderTextWithImages(d, txt) {
+    var re = /!\[([^\]]*)\]\(\s*(https?:\/\/[^)\s]+|data:image\/[a-z+.-]+;base64,[A-Za-z0-9+/=]+)\s*\)|(data:image\/[a-z+.-]+;(?:base64,[A-Za-z0-9+/=]+|[^)\s]*))|(https?:\/\/[^\s<>"')]+\.(?:png|jpe?g|gif|webp|bmp|svg)(?:\?[^\s<>"')]*)?)/gi;
+    var last = 0, seq = 0, m;
+    while ((m = re.exec(txt))) {
+      var before = txt.slice(last, m.index);
+      if (before.trim()) addBub(d, before);
+      var url = m[2] || m[3] || m[4];
+      if (url) { seq++; addImageBlock(d, url, m[1] || '', seq); }
+      last = m.index + m[0].length;
+    }
+    var rest = txt.slice(last);
+    if (rest.trim()) addBub(d, rest);
+  }
   function renderRichBot(d, text) {
     var F = '\x60\x60\x60';
     var i = 0, seq = 0, last = 0;
@@ -464,14 +579,14 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
       var b = text.indexOf(F, nl + 1);
       if (b === -1) break;
       var before = text.slice(last, a);
-      if (before.trim()) addBub(d, before);
+      if (before.trim()) renderTextWithImages(d, before);
       seq++;
       addFileCard(d, text.slice(a + 3, nl), text.slice(nl + 1, b), seq);
       last = b + 3;
       i = b + 3;
     }
     var rest = text.slice(last);
-    if (rest.trim()) addBub(d, rest);
+    if (rest.trim()) renderTextWithImages(d, rest);
   }
   function bubble(role, text, sources, img, skillNames) {
     var d = document.createElement('div'); d.className = 'msg ' + role;
@@ -483,7 +598,7 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
       d.appendChild(im);
     }
     if (text) {
-      if (role === 'bot' && String(text).indexOf('\x60\x60\x60') !== -1) renderRichBot(d, text);
+      if (role === 'bot' && isRichBotText(text)) renderRichBot(d, text);
       else {
         var b = document.createElement('div'); b.className = 'bub'; b.textContent = text;
         d.appendChild(b);
