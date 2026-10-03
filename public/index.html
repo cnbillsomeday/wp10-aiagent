@@ -223,13 +223,14 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
     <label class="chk"><input id="cfgSearch" type="checkbox"> 新会话默认开启联网搜索（顶栏「联网」按钮可对当前会话临时开关）</label>
     <label>搜索源</label>
     <select id="cfgSearchProvider">
-      <option value="auto">自动：DuckDuckGo → 百度 → Yahoo（免费，推荐）</option>
+      <option value="auto">自动：DuckDuckGo → Brave → 百度（免费，推荐）</option>
       <option value="duckduckgo">DuckDuckGo（免费）</option>
+      <option value="brave-free">Brave 网页（免费）</option>
       <option value="baidu">百度（免费，中文）</option>
-      <option value="yahoo">Yahoo（免费，Bing 系）</option>
+      <option value="yahoo">Yahoo（免费）</option>
       <option value="tavily">Tavily（需 Key）</option>
       <option value="serper">Serper / Google（需 Key）</option>
-      <option value="brave">Brave（需 Key）</option>
+      <option value="brave">Brave API（需 Key）</option>
     </select>
     <label>搜索源 API Key</label>
     <input id="cfgSearchKey" type="password" placeholder="免费源无需填写；付费源在此填 Key">
@@ -841,7 +842,11 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
     }
     var out = [], seen = [];
     for (var j = 0; j < arr.length && out.length < 8; j++) {
-      var s = String(arr[j] || '').trim().slice(0, 300);
+      var raw = arr[j];
+      var s = '';
+      if (raw && typeof raw === 'object') s = String(raw.fact || raw.text || raw.content || raw.memory || '');
+      else s = String(raw || '');
+      s = s.trim().slice(0, 300);
       if (!s) continue;
       var dup = false, low = s.toLowerCase();
       for (var k = 0; k < memory.length; k++) if (memory[k].text.toLowerCase() === low) { dup = true; break; }
@@ -856,13 +861,13 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
     if (!cur || !cur.messages.length) { alert('当前会话还没有消息'); return; }
     if (!cfg.baseUrl || !cfg.model) { openSettings(); return; }
     var dump = [];
-    var start = Math.max(0, cur.messages.length - 30);
+    var start = Math.max(0, cur.messages.length - 20);
     var total = 0;
     for (var i = start; i < cur.messages.length; i++) {
       var mm = cur.messages[i];
       if (!mm.content) continue;
-      var line = (mm.role === 'user' ? '用户：' : '助手：') + String(mm.content).slice(0, 500);
-      if (total + line.length > 8000) break;
+      var line = (mm.role === 'user' ? '用户：' : '助手：') + String(mm.content).slice(0, 300);
+      if (total + line.length > 4000) break;
       total += line.length;
       dump.push(line);
     }
@@ -875,7 +880,7 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
     var url = cfg.proxy ? '/api-proxy/chat/completions' : (rtrimSlash(cfg.baseUrl) + '/chat/completions');
     var x = new XMLHttpRequest();
     x.open('POST', url, true);
-    x.timeout = 120000;
+    x.timeout = 180000;
     x.setRequestHeader('Content-Type', 'application/json');
     if (cfg.apiKey) x.setRequestHeader('Authorization', 'Bearer ' + cfg.apiKey);
     if (cfg.proxy) x.setRequestHeader('X-Api-Base', cfg.baseUrl);
@@ -892,9 +897,18 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
         alert(em);
         return;
       }
-      var content = data && data.choices && data.choices[0] && data.choices[0].message ? (data.choices[0].message.content || '') : '';
+      var content = '';
+      if (data && data.choices && data.choices[0] && data.choices[0].message) {
+        var mc = data.choices[0].message.content;
+        if (Array.isArray(mc)) {
+          var acc = [];
+          for (var mi = 0; mi < mc.length; mi++) acc.push(mc[mi] && mc[mi].text ? mc[mi].text : '');
+          content = acc.join('');
+        } else content = mc || '';
+      }
+      if (!content) { alert('模型返回为空，无法提取（可重试）。原始响应片段：' + String(x.responseText || '').slice(0, 150)); return; }
       var cands = parseCandidates(content);
-      if (!cands.length) { alert('未提取到新的记忆'); return; }
+      if (!cands.length) { alert('未能从模型返回中解析出记忆（可重试）。返回片段：' + content.replace(/\s+/g, ' ').slice(0, 120)); return; }
       showCandidates(cands);
     };
     x.onerror = function () { restore(); alert('提取请求发送失败' + (cfg.proxy ? '' : '（可能跨域受限，可在设置中开启 Worker 代理）')); };

@@ -223,13 +223,14 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
     <label class="chk"><input id="cfgSearch" type="checkbox"> 新会话默认开启联网搜索（顶栏「联网」按钮可对当前会话临时开关）</label>
     <label>搜索源</label>
     <select id="cfgSearchProvider">
-      <option value="auto">自动：DuckDuckGo → 百度 → Yahoo（免费，推荐）</option>
+      <option value="auto">自动：DuckDuckGo → Brave → 百度（免费，推荐）</option>
       <option value="duckduckgo">DuckDuckGo（免费）</option>
+      <option value="brave-free">Brave 网页（免费）</option>
       <option value="baidu">百度（免费，中文）</option>
-      <option value="yahoo">Yahoo（免费，Bing 系）</option>
+      <option value="yahoo">Yahoo（免费）</option>
       <option value="tavily">Tavily（需 Key）</option>
       <option value="serper">Serper / Google（需 Key）</option>
-      <option value="brave">Brave（需 Key）</option>
+      <option value="brave">Brave API（需 Key）</option>
     </select>
     <label>搜索源 API Key</label>
     <input id="cfgSearchKey" type="password" placeholder="免费源无需填写；付费源在此填 Key">
@@ -841,7 +842,11 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
     }
     var out = [], seen = [];
     for (var j = 0; j < arr.length && out.length < 8; j++) {
-      var s = String(arr[j] || '').trim().slice(0, 300);
+      var raw = arr[j];
+      var s = '';
+      if (raw && typeof raw === 'object') s = String(raw.fact || raw.text || raw.content || raw.memory || '');
+      else s = String(raw || '');
+      s = s.trim().slice(0, 300);
       if (!s) continue;
       var dup = false, low = s.toLowerCase();
       for (var k = 0; k < memory.length; k++) if (memory[k].text.toLowerCase() === low) { dup = true; break; }
@@ -856,13 +861,13 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
     if (!cur || !cur.messages.length) { alert('当前会话还没有消息'); return; }
     if (!cfg.baseUrl || !cfg.model) { openSettings(); return; }
     var dump = [];
-    var start = Math.max(0, cur.messages.length - 30);
+    var start = Math.max(0, cur.messages.length - 20);
     var total = 0;
     for (var i = start; i < cur.messages.length; i++) {
       var mm = cur.messages[i];
       if (!mm.content) continue;
-      var line = (mm.role === 'user' ? '用户：' : '助手：') + String(mm.content).slice(0, 500);
-      if (total + line.length > 8000) break;
+      var line = (mm.role === 'user' ? '用户：' : '助手：') + String(mm.content).slice(0, 300);
+      if (total + line.length > 4000) break;
       total += line.length;
       dump.push(line);
     }
@@ -875,7 +880,7 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
     var url = cfg.proxy ? '/api-proxy/chat/completions' : (rtrimSlash(cfg.baseUrl) + '/chat/completions');
     var x = new XMLHttpRequest();
     x.open('POST', url, true);
-    x.timeout = 120000;
+    x.timeout = 180000;
     x.setRequestHeader('Content-Type', 'application/json');
     if (cfg.apiKey) x.setRequestHeader('Authorization', 'Bearer ' + cfg.apiKey);
     if (cfg.proxy) x.setRequestHeader('X-Api-Base', cfg.baseUrl);
@@ -892,9 +897,18 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
         alert(em);
         return;
       }
-      var content = data && data.choices && data.choices[0] && data.choices[0].message ? (data.choices[0].message.content || '') : '';
+      var content = '';
+      if (data && data.choices && data.choices[0] && data.choices[0].message) {
+        var mc = data.choices[0].message.content;
+        if (Array.isArray(mc)) {
+          var acc = [];
+          for (var mi = 0; mi < mc.length; mi++) acc.push(mc[mi] && mc[mi].text ? mc[mi].text : '');
+          content = acc.join('');
+        } else content = mc || '';
+      }
+      if (!content) { alert('模型返回为空，无法提取（可重试）。原始响应片段：' + String(x.responseText || '').slice(0, 150)); return; }
       var cands = parseCandidates(content);
-      if (!cands.length) { alert('未提取到新的记忆'); return; }
+      if (!cands.length) { alert('未能从模型返回中解析出记忆（可重试）。返回片段：' + content.replace(/\\s+/g, ' ').slice(0, 120)); return; }
       showCandidates(cands);
     };
     x.onerror = function () { restore(); alert('提取请求发送失败' + (cfg.proxy ? '' : '（可能跨域受限，可在设置中开启 Worker 代理）')); };
@@ -1194,7 +1208,7 @@ function unwrapDuckUrl(href) {
 }
 async function searchDuck(query, count) {
   var api = "https://lite.duckduckgo.com/lite/?q=" + encodeURIComponent(query);
-  var up = await fetch(api, { headers: { "User-Agent": SEARCH_UA, "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8" } });
+  var up = await fetch(api, { headers: { "User-Agent": SEARCH_UA, "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8" }, signal: AbortSignal.timeout(10000) });
   var html = await up.text();
   if (up.status !== 200 || html.indexOf("result-link") === -1) throw new Error("DuckDuckGo 被限流（HTTP " + up.status + "）");
   var results = [];
@@ -1211,13 +1225,14 @@ async function searchDuck(query, count) {
     var title = decodeEntities(m[2].replace(/<[^>]+>/g, "")).replace(/\s+/g, " ").trim();
     var link = unwrapDuckUrl(hm[1]);
     if (!title || (link.indexOf("http://") !== 0 && link.indexOf("https://") !== 0)) continue;
+    if (link.indexOf("duckduckgo.com/y.js") !== -1) continue;
     results.push({ title: title, url: link, snippet: (snippets[results.length] || "").slice(0, 300) });
   }
   return results;
 }
 async function searchBaidu(query, count) {
   var api = "https://www.baidu.com/s?wd=" + encodeURIComponent(query) + "&rn=" + Math.max(count, 10);
-  var up = await fetch(api, { headers: { "User-Agent": SEARCH_UA, "Accept-Language": "zh-CN,zh;q=0.9" } });
+  var up = await fetch(api, { headers: { "User-Agent": SEARCH_UA, "Accept-Language": "zh-CN,zh;q=0.9" }, signal: AbortSignal.timeout(10000) });
   var html = await up.text();
   if (up.status !== 200) throw new Error("百度 HTTP " + up.status);
   if (html.length < 5000 || html.indexOf("百度安全验证") !== -1) throw new Error("百度被安全验证拦截");
@@ -1258,7 +1273,12 @@ function unwrapYahooUrl(href) {
 }
 async function searchYahoo(query, count) {
   var api = "https://search.yahoo.com/search?p=" + encodeURIComponent(query) + "&n=" + Math.max(count, 10);
-  var up = await fetch(api, { headers: { "User-Agent": SEARCH_UA, "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8" } });
+  var up;
+  try {
+    up = await fetch(api, { headers: { "User-Agent": SEARCH_UA, "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8" }, signal: AbortSignal.timeout(10000) });
+  } catch (e) {
+    throw new Error("Yahoo 被反爬拦截（" + String((e && e.message) || "网络错误").slice(0, 40) + "）");
+  }
   var html = await up.text();
   if (up.status !== 200 || html.indexOf('class="title') === -1) throw new Error("Yahoo 被拦截（HTTP " + up.status + "）");
   var results = [];
@@ -1278,6 +1298,27 @@ async function searchYahoo(query, count) {
     var fwd = html.slice(m.index + m[0].length, m.index + m[0].length + 1600);
     var pm = fwd.match(/<p[^>]*>([\s\S]*?)<\/p>/);
     var snippet = pm ? decodeEntities(pm[1].replace(/<[^>]+>/g, "")).replace(/\s+/g, " ").trim() : "";
+    results.push({ title: title, url: link, snippet: snippet.slice(0, 300) });
+  }
+  return results;
+}
+async function searchBraveFree(query, count) {
+  var api = "https://search.brave.com/search?q=" + encodeURIComponent(query);
+  var up = await fetch(api, { headers: { "User-Agent": SEARCH_UA, "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8" }, signal: AbortSignal.timeout(10000) });
+  var html = await up.text();
+  if (up.status !== 200 || html.indexOf('data-type="web"') === -1) throw new Error("Brave 被拦截（HTTP " + up.status + "）");
+  var results = [];
+  var parts = html.split('data-type="web"').slice(1);
+  for (var i = 0; i < parts.length && results.length < count; i++) {
+    var block = parts[i];
+    var a = block.match(/<a href="(https?:\/\/[^"]+)"/);
+    var tm = block.match(/class="title[^"]*"[^>]*>([\s\S]*?)<\/div>/);
+    if (!a || !tm) continue;
+    var link = decodeEntities(a[1]);
+    var title = decodeEntities(tm[1].replace(/<[^>]+>/g, "")).replace(/\s+/g, " ").trim();
+    if (!title) continue;
+    var dm = block.match(/class="description[^"]*"[^>]*>([\s\S]*?)<\/div>/);
+    var snippet = dm ? decodeEntities(dm[1].replace(/<[^>]+>/g, "")).replace(/\s+/g, " ").trim() : "";
     results.push({ title: title, url: link, snippet: snippet.slice(0, 300) });
   }
   return results;
@@ -1347,20 +1388,21 @@ async function handleSearch(req) {
   var results = [];
   try {
     if (provider === "auto") {
-      var chain = ["duckduckgo", "baidu", "yahoo"];
+      var chain = ["duckduckgo", "brave", "baidu"];
       var errs = [];
       for (var ci = 0; ci < chain.length && !results.length; ci++) {
         try {
           results = chain[ci] === "duckduckgo" ? await searchDuck(query, count)
-            : chain[ci] === "baidu" ? await searchBaidu(query, count)
-            : await searchYahoo(query, count);
+            : chain[ci] === "brave" ? await searchBraveFree(query, count)
+            : await searchBaidu(query, count);
         } catch (err) { errs.push(chain[ci] + "：" + err.message); }
       }
-      if (!results.length && errs.length) throw new Error("免费搜索源全部失败[" + errs.join("；") + "]");
+      if (!results.length && errs.length) throw new Error("搜索源暂时不可用（可稍后重试，或在设置中配置 Tavily Key）[" + errs.join("；") + "]");
     }
     else if (provider === "duckduckgo") results = await searchDuck(query, count);
     else if (provider === "baidu") results = await searchBaidu(query, count);
     else if (provider === "yahoo") results = await searchYahoo(query, count);
+    else if (provider === "brave-free") results = await searchBraveFree(query, count);
     else if (provider === "tavily") results = await searchTavily(query, count, apiKey);
     else if (provider === "serper") results = await searchSerper(query, count, apiKey);
     else if (provider === "brave") results = await searchBrave(query, count, apiKey);
