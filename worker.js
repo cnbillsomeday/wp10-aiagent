@@ -123,11 +123,17 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
 #memdFormBtns button, #memdFormBtns2 button { flex:1; padding:9px; border-radius:8px; font-size:14px; }
 #memSave, #memAddSel { border:0; background:#2f6bd8; color:#fff; margin-right:8px; }
 #memCancel, #memCandCancel { border:1px solid #c9d2e0; background:#fff; color:#333; }
-#memdCand { flex:0 0 auto; max-height:45%; overflow-y:auto; padding:4px 12px 12px; border-bottom:1px solid #e6ebf2; }
+#memdCand { flex:0 0 auto; max-height:220px; overflow-y:auto; padding:4px 12px 12px; border-bottom:1px solid #e6ebf2; }
 .memCandHead { font-size:13px; color:#5b6572; margin:8px 0 6px; }
 .memcand { display:flex; align-items:flex-start; font-size:13px; margin-bottom:6px; line-height:1.4; }
 .memcand input { margin:2px 5px 0 0; flex:0 0 auto; }
 #memdFoot { flex:0 0 auto; display:flex; padding:10px 12px; border-top:1px solid #e6ebf2; }
+#memMsg { flex:0 0 auto; padding:8px 12px; font-size:12px; line-height:1.5; color:#42506a; background:#f4f7fb; border-bottom:1px solid #dde3ec; word-break:break-all; max-height:160px; overflow-y:auto; white-space:pre-wrap; }
+#memMsg.err { background:#fdeceb; color:#b02a25; border-bottom-color:#f3c2bf; }
+#memMsg.ok { background:#eaf7ef; color:#1e6b45; border-bottom-color:#bfe0cd; }
+#memOpts { flex:0 0 auto; display:flex; align-items:center; padding:7px 12px; border-top:1px solid #f0f2f6; }
+#memModel { flex:1 1 auto; min-width:0; padding:7px 8px; border:1px solid #c9d2e0; border-radius:7px; font-size:13px; box-sizing:border-box; }
+#memTest { flex:0 0 auto; margin-left:6px; border:1px solid #c9d2e0; background:#f4f7fb; color:#42506a; border-radius:7px; padding:7px 10px; font-size:13px; }
 </style>
 </head>
 <body>
@@ -173,6 +179,7 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
   </div>
   <div id="memd">
     <div id="memdHead">全局记忆<button id="memdClose" class="skdx">×</button></div>
+    <div id="memMsg" style="display:none"></div>
     <label class="chk memTop"><input id="memOn" type="checkbox"> 启用全局记忆（所有会话生效）</label>
     <div id="memWarn" style="display:none">全局记忆已关闭，记忆不会注入任何对话</div>
     <div id="memdEdit" style="display:none">
@@ -186,6 +193,10 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
       <div id="memdFormBtns2"><button id="memAddSel">添加选中</button><button id="memCandCancel">取消</button></div>
     </div>
     <div id="memdList"></div>
+    <div id="memOpts">
+      <input id="memModel" type="text" placeholder="提取用模型（留空=聊天模型）">
+      <button id="memTest">测试提取</button>
+    </div>
     <div id="memdFoot">
       <button id="memNew" class="skbtn">新建</button>
       <button id="memExtract" class="skbtn">从会话提取</button>
@@ -251,7 +262,7 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
 (function () {
   var LS_S = 'aichat_sessions_v1', LS_C = 'aichat_cfg_v1';
   var sessions = [], cur = null, busy = false, pendImg = null, quotaWarned = false;
-  var cfg = { baseUrl: 'https://api.openai.com/v1', apiKey: '', model: 'gpt-4o-mini', proxy: true, systemPrompt: '', searchEnabled: false, searchProvider: 'auto', searchKey: '', searchCount: 4, searchFetch: true, skillAuto: true, memoryEnabled: true };
+  var cfg = { baseUrl: 'https://api.openai.com/v1', apiKey: '', model: 'gpt-4o-mini', proxy: true, systemPrompt: '', searchEnabled: false, searchProvider: 'auto', searchKey: '', searchCount: 4, searchFetch: true, skillAuto: true, memoryEnabled: true, extractModel: '' };
 
   // 默认角色（通过 system 提示词实现，可在每个会话独立选择）
   var CHARS = [
@@ -443,7 +454,7 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
     d.appendChild(b);
   }
   function renderRichBot(d, text) {
-    var F = '\x60\x60\x60';
+    var F = '\\x60\\x60\\x60';
     var i = 0, seq = 0, last = 0;
     while (true) {
       var a = text.indexOf(F, i);
@@ -472,7 +483,7 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
       d.appendChild(im);
     }
     if (text) {
-      if (role === 'bot' && String(text).indexOf('\x60\x60\x60') !== -1) renderRichBot(d, text);
+      if (role === 'bot' && String(text).indexOf('\\x60\\x60\\x60') !== -1) renderRichBot(d, text);
       else {
         var b = document.createElement('div'); b.className = 'bub'; b.textContent = text;
         d.appendChild(b);
@@ -816,13 +827,37 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
   }
   function addSelectedCandidates() {
     var rows = $('memCandList').querySelectorAll('.memcand');
+    var n = 0;
     for (var i = 0; i < rows.length && memory.length < 50; i++) {
       var cb = rows[i].querySelector('input');
       if (cb && cb.checked) {
         memory.unshift({ id: uid(), text: rows[i].querySelector('span').textContent.slice(0, 300), enabled: true, ts: (new Date()).getTime() });
+        n++;
       }
     }
     saveMemory(); hideCand(); renderMemory();
+    if (n) memStatus('已添加 ' + n + ' 条记忆，全站生效', 'ok');
+  }
+  function memStatus(text, kind) {
+    var el = $('memMsg');
+    if (!text) { el.style.display = 'none'; el.textContent = ''; el.className = ''; return; }
+    el.style.display = 'block';
+    el.className = kind || '';
+    el.textContent = text;
+    try { el.scrollTop = 0; } catch (e) { }
+  }
+  function dbg() {
+    if (window.console && console.log) {
+      try { console.log.apply(console, arguments); } catch (e) { }
+    }
+  }
+  function extractModelOf() { return ($('memModel').value || '').trim() || cfg.model; }
+  function apiHostOf() {
+    var m = /^https?:\\/\\/([^\\/]+)/.exec(cfg.baseUrl || '');
+    return m ? m[1] : '(未配置)';
+  }
+  function memDiag(emodel, size) {
+    return '[诊断] 代理:' + (cfg.proxy ? '开' : '关') + ' · 模型:' + emodel + ' · 目标:' + (cfg.proxy ? '/api-proxy/chat/completions' : apiHostOf()) + ' · 请求:' + size + 'B';
   }
   function parseCandidates(content) {
     var t = String(content || '');
@@ -856,9 +891,65 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
     }
     return out;
   }
+  function sendExtract(payload, onOk) {
+    var emodel = extractModelOf();
+    var url = cfg.proxy ? '/api-proxy/chat/completions' : (rtrimSlash(cfg.baseUrl) + '/chat/completions');
+    var body = JSON.stringify({ model: emodel, messages: payload });
+    var diag = memDiag(emodel, body.length);
+    var x = new XMLHttpRequest();
+    x.open('POST', url, true);
+    x.timeout = 180000;
+    x.setRequestHeader('Content-Type', 'application/json');
+    if (cfg.apiKey) x.setRequestHeader('Authorization', 'Bearer ' + cfg.apiKey);
+    if (cfg.proxy) x.setRequestHeader('X-Api-Base', cfg.baseUrl);
+    extracting = true;
+    var btn = $('memExtract'); var old = btn.textContent; btn.textContent = '提取中…'; btn.disabled = true;
+    function restore() { extracting = false; btn.textContent = old; btn.disabled = false; }
+    x.onload = function () {
+      restore();
+      try {
+        var data = null;
+        try { data = JSON.parse(x.responseText); } catch (e) { }
+        if (x.status !== 200) {
+          var em = '提取失败：HTTP ' + x.status + (x.statusText ? ' ' + x.statusText : '');
+          if (data && data.error && data.error.message) em += '：' + data.error.message;
+          memStatus(em + '\\n响应片段：' + String(x.responseText || '').slice(0, 300) + '\\n' + diag, 'err');
+          dbg('[extract] http error', x.status, String(x.responseText || '').slice(0, 500));
+          return;
+        }
+        var content = '';
+        if (data && data.choices && data.choices[0] && data.choices[0].message) {
+          var mc = data.choices[0].message.content;
+          if (Array.isArray(mc)) {
+            var acc = [];
+            for (var mi = 0; mi < mc.length; mi++) acc.push(mc[mi] && mc[mi].text ? mc[mi].text : '');
+            content = acc.join('');
+          } else content = mc || '';
+        }
+        if (!content) {
+          memStatus('模型返回为空，无法提取（可重试）。\\n响应片段：' + String(x.responseText || '').slice(0, 300) + '\\n' + diag, 'err');
+          return;
+        }
+        dbg('[extract] content', content.slice(0, 500));
+        onOk(content);
+      } catch (err) {
+        memStatus('提取处理异常：' + ((err && err.message) || String(err)) + '\\n' + diag, 'err');
+        dbg('[extract] exception', err);
+      }
+    };
+    x.onerror = function () {
+      restore();
+      memStatus('网络错误：提取请求发送失败（可能被拦截、超时或证书问题）。\\n' + diag, 'err');
+    };
+    x.ontimeout = function () {
+      restore();
+      memStatus('提取请求超时（180 秒未响应）。\\n' + diag, 'err');
+    };
+    x.send(body);
+  }
   function extractMemory() {
     if (extracting) return;
-    if (!cur || !cur.messages.length) { alert('当前会话还没有消息'); return; }
+    if (!cur || !cur.messages.length) { memStatus('当前会话还没有消息', 'err'); return; }
     if (!cfg.baseUrl || !cfg.model) { openSettings(); return; }
     var dump = [];
     var start = Math.max(0, cur.messages.length - 20);
@@ -871,49 +962,34 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
       total += line.length;
       dump.push(line);
     }
-    if (!dump.length) { alert('当前会话没有可提取的文本'); return; }
+    if (!dump.length) { memStatus('当前会话没有可提取的文本', 'err'); return; }
     var existing = [];
     for (var k = 0; k < memory.length; k++) existing.push(memory[k].text);
     var instruction = '你是记忆提取器。从对话中提取关于用户的、长期有效的事实（身份、职业、偏好、习惯、重要项目或背景）。要求：每条一句话；最多 8 条；只提取长期信息，忽略一次性的提问内容；不要与已有记忆重复。只输出 JSON 字符串数组，不要输出其他内容。';
     var userMsg = '已有记忆：' + (existing.length ? existing.join('；') : '（无）') + '\\n\\n对话内容：\\n' + dump.join('\\n');
     var payload = [{ role: 'system', content: instruction }, { role: 'user', content: userMsg }];
-    var url = cfg.proxy ? '/api-proxy/chat/completions' : (rtrimSlash(cfg.baseUrl) + '/chat/completions');
-    var x = new XMLHttpRequest();
-    x.open('POST', url, true);
-    x.timeout = 180000;
-    x.setRequestHeader('Content-Type', 'application/json');
-    if (cfg.apiKey) x.setRequestHeader('Authorization', 'Bearer ' + cfg.apiKey);
-    if (cfg.proxy) x.setRequestHeader('X-Api-Base', cfg.baseUrl);
-    extracting = true;
-    var btn = $('memExtract'); var old = btn.textContent; btn.textContent = '提取中…'; btn.disabled = true;
-    function restore() { extracting = false; btn.textContent = old; btn.disabled = false; }
-    x.onload = function () {
-      restore();
-      var data = null;
-      try { data = JSON.parse(x.responseText); } catch (e) { }
-      if (x.status !== 200) {
-        var em = '提取失败：HTTP ' + x.status;
-        if (data && data.error && data.error.message) em += '：' + data.error.message;
-        alert(em);
+    memStatus('提取中…（模型 ' + extractModelOf() + ' · ' + (cfg.proxy ? '代理开' : '直连') + '）');
+    sendExtract(payload, function (content) {
+      var cands = parseCandidates(content);
+      if (!cands.length) {
+        memStatus('未能从模型返回中解析出记忆（可重试）。\\n模型返回片段：' + content.replace(/\\s+/g, ' ').slice(0, 200), 'err');
         return;
       }
-      var content = '';
-      if (data && data.choices && data.choices[0] && data.choices[0].message) {
-        var mc = data.choices[0].message.content;
-        if (Array.isArray(mc)) {
-          var acc = [];
-          for (var mi = 0; mi < mc.length; mi++) acc.push(mc[mi] && mc[mi].text ? mc[mi].text : '');
-          content = acc.join('');
-        } else content = mc || '';
-      }
-      if (!content) { alert('模型返回为空，无法提取（可重试）。原始响应片段：' + String(x.responseText || '').slice(0, 150)); return; }
-      var cands = parseCandidates(content);
-      if (!cands.length) { alert('未能从模型返回中解析出记忆（可重试）。返回片段：' + content.replace(/\\s+/g, ' ').slice(0, 120)); return; }
       showCandidates(cands);
-    };
-    x.onerror = function () { restore(); alert('提取请求发送失败' + (cfg.proxy ? '' : '（可能跨域受限，可在设置中开启 Worker 代理）')); };
-    x.ontimeout = function () { restore(); alert('提取请求超时'); };
-    x.send(JSON.stringify({ model: cfg.model, messages: payload }));
+      memStatus('发现 ' + cands.length + ' 条候选记忆，请勾选后点「添加选中」', 'ok');
+    });
+  }
+  function testExtract() {
+    if (extracting) return;
+    if (!cfg.baseUrl || !cfg.model) { openSettings(); return; }
+    memStatus('测试中…（模型 ' + extractModelOf() + ' · ' + (cfg.proxy ? '代理开' : '直连') + '）');
+    var payload = [
+      { role: 'system', content: '你是记忆提取器。只输出 JSON 字符串数组，例如 ["用户叫测试"]。' },
+      { role: 'user', content: '已有记忆：（无）\\n\\n对话内容：\\n用户：我叫测试\\n助手：好的，记住了' }
+    ];
+    sendExtract(payload, function (content) {
+      memStatus('测试成功：HTTP 200，模型返回片段：\\n' + content.replace(/\\s+/g, ' ').slice(0, 300), 'ok');
+    });
   }
   function exportMemory() {
     if (!memory.length) { alert('暂无记忆可导出'); return; }
@@ -926,7 +1002,7 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
     document.body.appendChild(a); a.click();
     setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(a.href); }, 100);
   }
-  function showMemory() { hideHistory(); hideSkills(); $('memd').className = 'show'; $('mask').style.display = 'block'; $('memOn').checked = cfg.memoryEnabled !== false; renderMemory(); }
+  function showMemory() { hideHistory(); hideSkills(); $('memd').className = 'show'; $('mask').style.display = 'block'; $('memOn').checked = cfg.memoryEnabled !== false; $('memModel').value = cfg.extractModel || ''; memStatus(''); renderMemory(); }
   function hideMemory() { $('memd').className = ''; $('mask').style.display = 'none'; }
 
   function openSettings() {
@@ -1117,6 +1193,8 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
   $('memExport').onclick = exportMemory;
   $('memAddSel').onclick = addSelectedCandidates;
   $('memCandCancel').onclick = function () { hideCand(); renderMemory(); };
+  $('memTest').onclick = testExtract;
+  $('memModel').onchange = function () { cfg.extractModel = this.value.trim(); saveCfg(); };
   $('memOn').onchange = function () { cfg.memoryEnabled = $('memOn').checked; saveCfg(); $('memWarn').style.display = cfg.memoryEnabled === false ? 'block' : 'none'; renderMemBtn(); };
   $('btnSkills').onclick = showSkills;
   $('skdClose').onclick = hideSkills;
