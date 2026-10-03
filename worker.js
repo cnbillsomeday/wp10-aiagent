@@ -140,6 +140,8 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
 .imgcap { flex:1 1 auto; font-size:12px; color:#8a94a6; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .imgdl { flex:0 0 auto; border:1px solid #c9d2e0; background:#fff; color:#42506a; border-radius:6px; padding:4px 10px; font-size:12px; margin-left:6px; }
 .imgfail { font-size:12px; color:#b02a25; margin-bottom:4px; }
+.svgwrap { padding:8px 9px 0; }
+.svgimg { display:block; max-width:260px; max-height:260px; background:#fff; border:1px solid #dde3ec; border-radius:8px; }
 </style>
 </head>
 <body>
@@ -366,7 +368,7 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
     t.textContent = '已应用技能：' + names.join('、');
     d.appendChild(t);
   }
-  var FC_EXT = { python: '.py', py: '.py', javascript: '.js', js: '.js', typescript: '.ts', ts: '.ts', html: '.html', css: '.css', json: '.json', bash: '.sh', shell: '.sh', sh: '.sh', sql: '.sql', java: '.java', c: '.c', cpp: '.cpp', go: '.go', rust: '.rs', ruby: '.rb', php: '.php', yaml: '.yml', yml: '.yml', markdown: '.md', md: '.md', csv: '.csv', xml: '.xml', jsx: '.jsx', tsx: '.tsx', text: '.txt', txt: '.txt' };
+  var FC_EXT = { python: '.py', py: '.py', javascript: '.js', js: '.js', typescript: '.ts', ts: '.ts', html: '.html', css: '.css', json: '.json', bash: '.sh', shell: '.sh', sh: '.sh', sql: '.sql', java: '.java', c: '.c', cpp: '.cpp', go: '.go', rust: '.rs', ruby: '.rb', php: '.php', yaml: '.yml', yml: '.yml', markdown: '.md', md: '.md', csv: '.csv', xml: '.xml', svg: '.svg', jsx: '.jsx', tsx: '.tsx', text: '.txt', txt: '.txt' };
   function fmtSize(n) {
     if (n < 1024) return n + ' B';
     if (n < 1048576) return (n / 1024).toFixed(1) + ' KB';
@@ -409,7 +411,8 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
   }
   function downloadText(name, content) {
     try {
-      var blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      var mime = name.slice(-4).toLowerCase() === '.svg' ? 'image/svg+xml;charset=utf-8' : 'text/plain;charset=utf-8';
+      var blob = new Blob([content], { type: mime });
       var a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = name;
@@ -433,6 +436,14 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, function () { fallbackCopy(text); done(); });
     else { fallbackCopy(text); done(); }
   }
+  function svgPreviewUrl(content) {
+    var t = String(content || '').replace(/\\s+$/, '');
+    if (t.length > 204800) return '';
+    var low = t.toLowerCase();
+    var i = low.indexOf('<svg');
+    if (i === -1 || i > 200) return '';
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(t);
+  }
   function addFileCard(d, info, content, seq) {
     var p = parseFenceInfo(info, content, seq);
     var card = document.createElement('div'); card.className = 'filecard';
@@ -452,6 +463,17 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
       body.style.display = open ? 'block' : 'none';
       tg.textContent = open ? '收起预览' : '展开预览';
     };
+    var pv = svgPreviewUrl(content);
+    if (pv) {
+      var pimg = document.createElement('img');
+      pimg.className = 'svgimg'; pimg.src = pv; pimg.alt = 'SVG 预览';
+      pimg.setAttribute('loading', 'lazy');
+      pimg.setAttribute('decoding', 'async');
+      pimg.onerror = function () { if (pimg.parentNode) pimg.parentNode.removeChild(pimg); };
+      var pwrap = document.createElement('div'); pwrap.className = 'svgwrap';
+      pwrap.appendChild(pimg);
+      card.insertBefore(pwrap, card.firstChild);
+    }
     card.appendChild(head); card.appendChild(tg); card.appendChild(body);
     d.appendChild(card);
   }
@@ -681,13 +703,22 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
       { id: 'bi-weekly', name: '周报生成', desc: '周报,日报,工作总结,周总结,汇报', builtIn: true, enabled: true, body: '用户会提供零散的工作记录，请整理成结构化周报：1) 本周完成（量化成果，按影响力排序）；2) 进行中（注明进度与预计完成时间）；3) 下周计划；4) 风险与需要的支持。用简洁书面语，避免流水账，不要编造未提及的事实。' },
       { id: 'bi-review', name: '代码审查', desc: '审查,review,代码,bug,优化,重构', builtIn: true, enabled: true, body: '对用户给出的代码做严格审查，按正确性、安全性（注入/越权/敏感信息）、性能、可读性四个维度输出问题清单。每个问题给出：位置、严重程度（高/中/低）、原因和修改建议（尽量给修改后的代码片段）。没有问题的维度不必展开。' },
       { id: 'bi-polish', name: '英文润色', desc: '润色,polish,英文,翻译,改写', builtIn: true, enabled: true, body: '对用户提供的英文文本润色：保持原意，提升地道性与语气得体性。输出：1) 润色后的文本；2) 主要修改点及理由（简短列出）。若用户输入中文并要求翻译，先给出地道英文译文。' },
-      { id: 'bi-summary', name: '长文摘要', desc: '摘要,总结,提炼,tldr,要点', builtIn: true, enabled: true, body: '对用户提供的长文本做摘要：第一句给出核心结论；再按重要性分点列出关键信息（每点一句话）；最后单独列出行动项/待办（如有）。忠实原文，不添加原文没有的信息。' }
+      { id: 'bi-summary', name: '长文摘要', desc: '摘要,总结,提炼,tldr,要点', builtIn: true, enabled: true, body: '对用户提供的长文本做摘要：第一句给出核心结论；再按重要性分点列出关键信息（每点一句话）；最后单独列出行动项/待办（如有）。忠实原文，不添加原文没有的信息。' },
+      { id: 'bi-svgdraw', name: 'SVG 绘图', desc: '画一,画只,画张,画个,绘制,画图,svg,生成图,生成一张', builtIn: true, enabled: true, body: '当用户要求画图、绘制图像时，不要拒绝，也不要声称无法生成图片——直接手写一个完整、自包含的 SVG 作品，并使用 svg 代码围栏输出：1) 代码必须以 <svg 开头；2) 只使用内联矢量图形，禁止外链图片、字体或脚本；3) 尽量加入 SMIL 动画（animate / animateTransform 标签）让画面生动；4) 视图尺寸约 300x300，在浅色背景下清晰美观；5) 代码尽量精简，输出前检查标签闭合。' }
     ];
   }
   function loadSkills() {
     var saved = lsGet(LS_K, null);
     if (!saved || !saved.length) { skills = builtinSkills(); saveSkills(); return; }
     skills = saved;
+    var bis = builtinSkills();
+    var added = false;
+    for (var i = 0; i < bis.length; i++) {
+      var found = false;
+      for (var j = 0; j < skills.length; j++) { if (skills[j].id === bis[i].id) { found = true; break; } }
+      if (!found) { skills.push(bis[i]); added = true; }
+    }
+    if (added) saveSkills();
   }
   function saveSkills() { if (!lsSet(LS_K, skills) && !quotaWarned) { quotaWarned = true; alert('本地存储空间不足，技能列表可能未保存。'); } }
   function parseSkillMd(text) {
