@@ -106,6 +106,7 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
 #memdHead { padding:13px 12px; font-weight:bold; font-size:15px; border-bottom:1px solid #e6ebf2; display:flex; align-items:center; }
 .memTop { padding:9px 12px; margin:0; border-bottom:1px solid #f0f2f6; font-size:13px; color:#42506a; display:flex; align-items:center; }
 .memTop input { margin:0 5px 0 0; }
+#memWarn { padding:8px 12px; background:#fdeceb; color:#b02a25; font-size:12px; border-bottom:1px solid #f3c2bf; }
 #memdList { flex:1 1 auto; overflow-y:auto; }
 .memText { font-size:14px; color:#1c2430; word-break:break-all; line-height:1.4; }
 #memdEdit { flex:0 0 auto; padding:4px 12px 12px; border-bottom:1px solid #e6ebf2; }
@@ -160,6 +161,7 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
   <div id="memd">
     <div id="memdHead">全局记忆<button id="memdClose" class="skdx">×</button></div>
     <label class="chk memTop"><input id="memOn" type="checkbox"> 启用全局记忆（所有会话生效）</label>
+    <div id="memWarn" style="display:none">全局记忆已关闭，记忆不会注入任何对话</div>
     <div id="memdEdit" style="display:none">
       <label>记忆内容（一句话，如：用户是前端工程师）</label>
       <textarea id="memText" placeholder="要长期记住的事实…"></textarea>
@@ -496,7 +498,7 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
     b.className = 'tb' + (cur && cur.web ? ' on' : '');
     b.textContent = cur && cur.web ? '联网中' : '联网';
   }
-  function renderAll() { renderHistory(); renderMsgs(); renderChips(); renderWebBtn(); }
+  function renderAll() { renderHistory(); renderMsgs(); renderChips(); renderWebBtn(); renderMemBtn(); }
 
   function showHistory() { $('hist').className = 'show'; $('mask').style.display = 'block'; }
   function hideHistory() { $('hist').className = ''; $('mask').style.display = 'none'; }
@@ -715,7 +717,7 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
     return out;
   }
   function buildMemorySystem(list) {
-    var lines = ['关于用户的长期记忆（在所有对话中有效；回答时参考这些事实，但不要主动逐条复述）：'];
+    var lines = ['【重要】以下是用户的长期记忆（在所有会话中均有效）：凡涉及相关问题时必须依据这些事实回答，不要声称不知道；平时回答不要主动逐条复述。'];
     var total = 0;
     for (var i = 0; i < list.length; i++) {
       var t = String(list[i].text || '').slice(0, 300);
@@ -725,7 +727,15 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
     }
     return lines.join('\\n');
   }
+  function renderMemBtn() {
+    var b = $('btnMemory');
+    if (cfg.memoryEnabled === false) { b.textContent = '记忆(关)'; return; }
+    var n = enabledMemory().length;
+    b.textContent = n ? '记忆(' + n + ')' : '记忆';
+  }
   function renderMemory() {
+    renderMemBtn();
+    $('memWarn').style.display = (cfg.memoryEnabled === false) ? 'block' : 'none';
     var box = $('memdList'); box.innerHTML = '';
     if (!memory.length) { var p = document.createElement('div'); p.className = 'hempty'; p.textContent = '暂无记忆，点击下方新建或从会话提取'; box.appendChild(p); }
     for (var i = 0; i < memory.length; i++) {
@@ -989,11 +999,13 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
       var payload = [];
       var ch = charById(cur.charId || 'none');
       var sys = ch.id === 'custom' ? (cfg.systemPrompt || '').trim() : ch.prompt;
-      if (sys) payload.push({ role: 'system', content: sys });
       var memList = enabledMemory();
-      if (memList.length) payload.push({ role: 'system', content: buildMemorySystem(memList) });
-      if (skillList && skillList.length) payload.push({ role: 'system', content: buildSkillsSystem(skillList) });
-      if (searchResults && searchResults.length) payload.push({ role: 'system', content: buildSearchSystem(searchResults) });
+      var sysParts = [];
+      if (sys) sysParts.push(sys);
+      if (memList.length) sysParts.push(buildMemorySystem(memList));
+      if (skillList && skillList.length) sysParts.push(buildSkillsSystem(skillList));
+      if (searchResults && searchResults.length) sysParts.push(buildSearchSystem(searchResults));
+      if (sysParts.length) payload.push({ role: 'system', content: sysParts.join('\\n\\n') });
       for (var i = 0; i < cur.messages.length; i++) {
         var pm = cur.messages[i];
         if (pm.role === 'user' && pm.img) {
@@ -1076,7 +1088,7 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
   $('memExport').onclick = exportMemory;
   $('memAddSel').onclick = addSelectedCandidates;
   $('memCandCancel').onclick = function () { hideCand(); renderMemory(); };
-  $('memOn').onchange = function () { cfg.memoryEnabled = $('memOn').checked; saveCfg(); };
+  $('memOn').onchange = function () { cfg.memoryEnabled = $('memOn').checked; saveCfg(); $('memWarn').style.display = cfg.memoryEnabled === false ? 'block' : 'none'; renderMemBtn(); };
   $('btnSkills').onclick = showSkills;
   $('skdClose').onclick = hideSkills;
   $('skNew').onclick = function () { openSkillForm(null); };
