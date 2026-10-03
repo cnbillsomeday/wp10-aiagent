@@ -9,7 +9,7 @@
 * { box-sizing: border-box; -webkit-tap-highlight-color: rgba(0,0,0,0); }
 html, body { height: 100%; }
 body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Microsoft YaHei",Arial,sans-serif; font-size:16px; background:#eef1f5; color:#1c2430; }
-#top { flex:0 0 auto; display:flex; align-items:center; background:#25324a; color:#fff; padding:7px 8px; }
+#top { flex:0 0 auto; display:flex; align-items:center; background:#25324a; color:#fff; padding:7px 8px; position:relative; }
 #title { margin-left:8px; font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:38%; }
 .grow { flex:1 1 auto; }
 .tb { background:#34486b; color:#fff; border:0; border-radius:6px; padding:8px 10px; font-size:14px; margin-left:6px; }
@@ -107,6 +107,13 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
 .memTop { padding:9px 12px; margin:0; border-bottom:1px solid #f0f2f6; font-size:13px; color:#42506a; display:flex; align-items:center; }
 .memTop input { margin:0 5px 0 0; }
 #memWarn { padding:8px 12px; background:#fdeceb; color:#b02a25; font-size:12px; border-bottom:1px solid #f3c2bf; }
+#btnMore { display:none; }
+#moreMenu { position:absolute; top:100%; right:8px; z-index:25; background:#fff; border:1px solid #dde3ec; border-radius:8px; box-shadow:0 4px 14px rgba(0,0,0,.15); padding:4px; min-width:110px; margin-top:2px; }
+#moreMenu button { display:block; width:100%; border:0; background:none; text-align:left; padding:10px 14px; font-size:14px; color:#25324a; border-radius:6px; }
+@media (max-width: 520px) {
+  #btnSkills, #btnMemory, #btnCfg { display:none; }
+  #btnMore { display:block; }
+}
 #memdList { flex:1 1 auto; overflow-y:auto; }
 .memText { font-size:14px; color:#1c2430; word-break:break-all; line-height:1.4; }
 #memdEdit { flex:0 0 auto; padding:4px 12px 12px; border-bottom:1px solid #e6ebf2; }
@@ -133,6 +140,12 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
   <button id="btnSkills" class="tb">技能</button>
   <button id="btnMemory" class="tb">记忆</button>
   <button id="btnCfg" class="tb">设置</button>
+  <button id="btnMore" class="tb">⋯</button>
+  <div id="moreMenu" style="display:none">
+    <button id="mmSkills">技能</button>
+    <button id="mmMemory">记忆</button>
+    <button id="mmSettings">设置</button>
+  </div>
 </div>
 <div id="main">
   <div id="hist">
@@ -453,6 +466,8 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
     if (img) {
       var im = document.createElement('img');
       im.className = 'msgimg'; im.src = img; im.alt = '图片';
+      im.setAttribute('loading', 'lazy');
+      im.setAttribute('decoding', 'async');
       d.appendChild(im);
     }
     if (text) {
@@ -1099,6 +1114,16 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
   $('skExport').onclick = exportSkills;
   $('btnWeb').onclick = function () { if (!cur) newSession(); cur.web = !cur.web; saveSessions(); renderWebBtn(); };
   $('btnCfg').onclick = openSettings;
+  $('btnMore').onclick = function (ev) {
+    if (ev && ev.stopPropagation) ev.stopPropagation();
+    var mm = $('moreMenu');
+    mm.style.display = (mm.style.display === 'block') ? 'none' : 'block';
+  };
+  document.addEventListener('click', function () { $('moreMenu').style.display = 'none'; });
+  $('moreMenu').onclick = function (ev) { if (ev && ev.stopPropagation) ev.stopPropagation(); };
+  $('mmSkills').onclick = function () { $('moreMenu').style.display = 'none'; showSkills(); };
+  $('mmMemory').onclick = function () { $('moreMenu').style.display = 'none'; showMemory(); };
+  $('mmSettings').onclick = function () { $('moreMenu').style.display = 'none'; openSettings(); };
   $('btnCfgSave').onclick = saveSettings;
   $('btnCfgClose').onclick = closeSettings;
   $('btnSend').onclick = send;
@@ -1124,7 +1149,9 @@ body { margin:0; display:flex; flex-direction:column; font-family:"Segoe UI","Mi
   loadSkills();
   loadMemory();
   if (sessions.length) cur = sessions[0]; else newSession();
-  renderAll();
+  renderHistory(); renderChips(); renderWebBtn(); renderMemBtn();
+  if (cur) $('title').textContent = cur.title;
+  setTimeout(renderMsgs, 0);
   if (!cfg.apiKey) openSettings();
 })();
 </script>
